@@ -4,6 +4,15 @@ import (
 	"fmt"
 	"github.com/gorilla/websocket"
 	"sync"
+	"time"
+)
+
+const (
+	WriteWait = 10 * time.Second
+	// Time allowed to read the next pong message from the peer.
+	PongWait = 60 * time.Second
+	// Send pings to peer with this period. Must be less than pongWait.
+	PingPeriod = (PongWait * 9) / 10 // 54초마다 핑퐁
 )
 
 type SafeConn struct {

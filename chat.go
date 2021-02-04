@@ -2,7 +2,9 @@ package main
 
 const (
 	MessageEventCandidate = "candidate"
-	MessageEventOffer     = "offer'"
+	MessageEventOffer     = "offer"
+	MessageEventAnswer    = "answer"
+	MessageEventBroadcast = "broadcast"
 )
 
 type MessageProtocol struct {

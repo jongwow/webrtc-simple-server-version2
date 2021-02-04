@@ -22,6 +22,7 @@ func (s *SFU) GetRoom(name string) *Room {
 	room := s.getRoom(name)
 	if room == nil {
 		room = s.newRoom(name)
+		go room.Run()
 		fmt.Printf("Room[%s] creating\n", name)
 	} else {
 		fmt.Printf("Room[%s] exists\n", name)
@@ -31,14 +32,6 @@ func (s *SFU) GetRoom(name string) *Room {
 
 func (s *SFU) newRoom(name string) *Room {
 	room := NewRoom(name)
-
-	defer func() {
-		if room.isEmpty() {
-			s.Lock()
-			delete(s.rooms, name)
-			s.Unlock()
-		}
-	}()
 
 	s.Lock()
 	s.rooms[name] = room
