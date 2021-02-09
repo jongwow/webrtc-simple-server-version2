@@ -21,7 +21,7 @@ func (r *Room) Run() {
 			// clientMap에 등록
 			r.clientMap[client.GetName()] = client
 
-			// client를 실행
+			// client 를 실행
 			client.AddPeerConnection(client.id)
 
 			// 다른 client들에게 들어왔다고 알려주기

@@ -133,10 +133,11 @@ func (c *Client) AddTrack(u *Uptrack) {
 	if err != nil {
 		panic(err)
 	}
-	_, err = pc.AddTrack(outputTrack)
+	rtpSender, err := pc.AddTrack(outputTrack)
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("rtpSender: ", rtpSender.Track().Kind())
 
 	//=== Network 상태 확인하기 ===//
 	processRTCP := func(sender *webrtc.RTPSender) {
@@ -169,16 +170,20 @@ func (c *Client) AddTrack(u *Uptrack) {
 	}
 	for idx, sender := range pc.GetSenders() {
 		fmt.Printf("pc: %s, idx: %d\n", c.id, idx)
-		go processRTCP(sender)
+		kind := sender.Track().Kind()
+		if kind == webrtc.RTPCodecTypeVideo {
+			go processRTCP(sender)
+		}
 	}
 
 	//=== RTP 패킷을 전달받아 Write  ===//
-	var currTimestamp uint32
 	go func() {
-		for i := uint16(0); ; i++ {
-			select {
-			case packet := <-myPktQChan:
-				//fmt.Println("packet revc")
+		go func() {
+
+			var currTimestamp uint32
+			for i := uint16(0); ; i++ {
+
+				packet := <-myPktQChan
 				currTimestamp += packet.Timestamp
 				packet.Timestamp = currTimestamp
 				// Keep an increasing sequence number
@@ -186,11 +191,17 @@ func (c *Client) AddTrack(u *Uptrack) {
 				if currentChan != myPktQChan {
 					continue
 				}
-				fmt.Printf("client[%s]는 packet(%s)을 받았습니다.\n", c.GetName(), "q")
+				fmt.Printf("client[%s]는 packet(%s):%d 을 받았습니다.\n", c.GetName(), "q", i)
 				if err := outputTrack.WriteRTP(packet); err != nil && !errors.Is(err, io.ErrClosedPipe) {
 					panic(err)
 				}
-			case packet := <-myPktHChan:
+			}
+		}()
+		go func() {
+
+			var currTimestamp uint32
+			for i := uint16(0); ; i++ {
+				packet := <-myPktHChan
 				currTimestamp += packet.Timestamp
 				packet.Timestamp = currTimestamp
 				// Keep an increasing sequence number
@@ -198,14 +209,17 @@ func (c *Client) AddTrack(u *Uptrack) {
 				if currentChan != myPktHChan {
 					continue
 				}
-				//fmt.Println("packet revc")
-
-				fmt.Printf("client[%s]는 packet(%s)을 받았습니다.\n", c.GetName(), "h")
+				fmt.Printf("client[%s]는 packet(%s):%d 을 받았습니다.\n", c.GetName(), "h", i)
 				if err := outputTrack.WriteRTP(packet); err != nil && !errors.Is(err, io.ErrClosedPipe) {
 					panic(err)
 				}
-			case packet := <-myPktFChan:
-				//fmt.Println("packet revc")
+			}
+		}()
+		go func() {
+
+			var currTimestamp uint32
+			for i := uint16(0); ; i++ {
+				packet := <-myPktFChan
 				currTimestamp += packet.Timestamp
 				packet.Timestamp = currTimestamp
 				// Keep an increasing sequence number
@@ -213,18 +227,22 @@ func (c *Client) AddTrack(u *Uptrack) {
 				if currentChan != myPktFChan {
 					continue
 				}
-				fmt.Printf("client[%s]는 packet(%s)을 받았습니다.\n", c.GetName(), "f")
+				fmt.Printf("client[%s]는 packet(%s):%d 을 받았습니다.\n", c.GetName(), "f", i)
 				if err := outputTrack.WriteRTP(packet); err != nil && !errors.Is(err, io.ErrClosedPipe) {
 					panic(err)
 				}
 			}
-		}
+		}()
 	}()
 }
 
 //TODO: Audio 고려 안함!! Video만 고려함!
 func handleOnTrack(c *Client) func(*webrtc.TrackRemote, *webrtc.RTPReceiver) {
 	return func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		if track.Kind() == webrtc.RTPCodecTypeAudio {
+			fmt.Println("Audio는 일단 생략")
+			return
+		}
 		// packet이 delta가 되게끔 lastTimestamp를 바꿀 것.
 		myPC := c.peerConnections[c.id]
 		var lastTimestamp uint32
