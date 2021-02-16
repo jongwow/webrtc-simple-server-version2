@@ -18,10 +18,11 @@ func (r *Room) Run() {
 		case client := <-r.ChanEnter:
 			// 이부분도 함수로 빼면 깔끔하지 않을까?
 			fmt.Println("새로운 Client 등록", client.GetName())
+
 			// clientMap에 등록
 			r.clientMap[client.GetName()] = client
 
-			// client 를 실행
+			// client에 peer 추가
 			client.AddPeerConnection(client.id)
 
 			// 다른 client들에게 들어왔다고 알려주기
@@ -41,7 +42,7 @@ func (r *Room) Run() {
 		// 해당 client를 삭제
 		case client := <-r.ChanConnected:
 			// client가 연결이 완료됐어요.
-			fmt.Println("client", client.id, " 연결 완료. uptracks를 업데이트.")
+			fmt.Println("client", client.id, " 연결 완료. uptracks 를 업데이트.")
 			_, ok := r.UptrackMaps[client.id]
 			if ok {
 				fmt.Println("이미 존재하는 Uptrack 입니다.")
