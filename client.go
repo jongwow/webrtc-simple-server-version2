@@ -27,9 +27,7 @@ type Client struct {
 	ChanInbound        chan *MessageProtocol // 들어오는 Message 다룸
 	ChanConnected      chan bool
 	ChanKill           chan bool
-	pktFChan           chan *rtp.Packet
-	pktHChan           chan *rtp.Packet
-	pktQChan           chan *rtp.Packet
+	UpTracks           map[string]*webrtc.TrackLocalStaticRTP
 }
 
 func NewClient(room *Room, c *websocket.Conn, clientName string) *Client {
@@ -48,9 +46,6 @@ func NewClient(room *Room, c *websocket.Conn, clientName string) *Client {
 		ChanKill:           make(chan bool),
 		ChanBroadcast:      room.ChanBroadcast,
 	}
-	client.pktFChan = make(chan *rtp.Packet, 100)
-	client.pktHChan = make(chan *rtp.Packet, 100)
-	client.pktQChan = make(chan *rtp.Packet, 100)
 	return client
 }
 func (c *Client) Run() {
@@ -239,71 +234,24 @@ func (c *Client) AddTrack(u *Uptrack) {
 //TODO: Audio 고려 안함!! Video만 고려함!
 func handleOnTrack(c *Client) func(*webrtc.TrackRemote, *webrtc.RTPReceiver) {
 	return func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		if track.Kind() == webrtc.RTPCodecTypeAudio {
-			fmt.Println("Audio는 일단 생략")
-			return
+		fmt.Println("handleOnTrack")
+		trackLocal, err := webrtc.NewTrackLocalStaticRTP(track.Codec().RTPCodecCapability, track.ID(), "remoteStreamID")
+		if err != nil {
+			panic(err)
 		}
-		// packet이 delta가 되게끔 lastTimestamp를 바꿀 것.
-		myPC := c.peerConnections[c.id]
-		var lastTimestamp uint32
-		const maxTotalBitrate = 2000000
+		//== track이 add됐다는 사실을 알리는 method 필요.
 
-		go func() {
-			ticker := time.NewTicker(3 * time.Second)
-			for range ticker.C {
-				if track.RID() == "" {
-					fmt.Println("Track RID is empty")
-					return
-				}
-				fmt.Printf("client[%s] pli for stream with rid: %q, ssrc: %d, mimeType: %q\n", c.name, track.RID(), track.SSRC(), track.Codec().MimeType)
-				if writeErr := myPC.WriteRTCP([]rtcp.Packet{
-					&rtcp.ReceiverEstimatedMaximumBitrate{Bitrate: maxTotalBitrate, SSRCs: []uint32{uint32(track.SSRC())}},
-				}); writeErr != nil {
-					fmt.Println(writeErr)
-				}
-				if writeErr := myPC.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(track.SSRC())}}); writeErr != nil {
-					fmt.Println(writeErr)
-				}
-			}
-		}()
-		//cnt := 0
+		buf := make([]byte, 2048)
 		for {
-			recvRTP, _, readErr := track.ReadRTP()
-			if readErr != nil {
-				fmt.Println(readErr)
-				fmt.Println("TRACK IS ERROR", track.RID(), track.SSRC(), c.name)
+			i, _, err := track.Read(buf)
+			if err != nil {
+				log.Println("[Ontrack] remote Read Warning: ", err)
 				return
-				//panic(readErr)
 			}
-
-			// Change the timestamp to only be the delta
-			oldTimestamp := recvRTP.Timestamp
-			if lastTimestamp == 0 {
-				recvRTP.Timestamp = 0
-			} else {
-				recvRTP.Timestamp -= lastTimestamp
+			if _, err = trackLocal.Write(buf[:i]); err != nil {
+				log.Println("[Ontrack] trackLocal Write Warning: ", err)
+				return
 			}
-			lastTimestamp = oldTimestamp
-			// track에 맞춰서 rtp Chan에 해당 packets들을 넣어줌.
-			go func() {
-				//cnt++
-				//if cnt % 10 == 0{
-				//	fmt.Println()
-				//}
-				//fmt.Printf("[%s(%s)]",c.name, track.RID())
-				//TODO: 이렇게 우회하면  deadlock같은게 없으려나
-				// 이 chan에서 deadlock 없는게 과연 좋은걸까? realtime의 whole point 자체가 패킷 몇개 유실되도 상관없어야하는거아닐까
-				if track.RID() == "f" {
-					//fmt.Println("track RID f sent pkt")
-					c.pktFChan <- recvRTP
-				} else if track.RID() == "h" {
-					//fmt.Println("track RID h sent pkt")
-					c.pktHChan <- recvRTP
-				} else if track.RID() == "q" {
-					//fmt.Println("track RID q sent pkt")
-					c.pktQChan <- recvRTP
-				}
-			}()
 		}
 	}
 }
@@ -454,9 +402,9 @@ func (c *Client) readPump() {
 				fmt.Println("c.handleOffer(message) Error")
 				return
 			}
-		case "echo":
-			if c.handleEcho(message) {
-				fmt.Println("c.handleEcho(message) Error")
+		case MessageEventBroadcast:
+			if c.handleBroadcast(message) {
+				fmt.Println("c.handleBroadcast(message) Error")
 				return
 			}
 		default:
@@ -554,8 +502,8 @@ func (c *Client) handleOffer(message *MessageProtocol) bool {
 	return false
 }
 
-func (c *Client) handleEcho(message *MessageProtocol) bool {
-	fmt.Printf("> client[%s]에서 Echo가 들어왔어요!\n", c.id)
+func (c *Client) handleBroadcast(message *MessageProtocol) bool {
+	fmt.Printf("> client[%s]에서 Broadcast가 들어왔어요!\n", c.id)
 	if by, err := json.Marshal(message.Data); err == nil {
 		c.ChanBroadcast <- &MessageProtocol{
 			Id:    c.id,

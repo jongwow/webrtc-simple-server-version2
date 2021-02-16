@@ -21,19 +21,18 @@ func appHandler(w http.ResponseWriter, r *http.Request) {
 			log.Println(r.Header.Get("Origin"))
 			return true
 		},
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
+		ReadBufferSize:  2048,
+		WriteBufferSize: 2048,
 	}
 
 	// Websocket 받을 수 있게 설정
-	unsafeConn, err := upgrader.Upgrade(w, r, nil)
+	unsafeConn, err := upgrader.Upgrade(w, r, nil) // 종료시점: readPump 종료시
 	if err != nil {
 		log.Println(err)
 	}
-	defer unsafeConn.Close()
 
 	// RoomID를 받았는지 검증
-	roomId, ok := getRoomIdFromUrl(r)
+	roomId, ok := getParamFromRequest(r, "roomId")
 	if !ok { // 방 번호를 입력하지 않고 접속 시도.
 		unsafeConn.WriteMessage(websocket.TextMessage, []byte(paramRequiredMessage))
 		return
@@ -69,8 +68,8 @@ func appHandler(w http.ResponseWriter, r *http.Request) {
 	client.Run()
 }
 
-func getRoomIdFromUrl(r *http.Request) (roomId string, exist bool) {
-	roomId, exist = getParamFromQuery(r.URL.Query(), "roomId")
+func getParamFromRequest(r *http.Request, s string) (param string, exist bool) {
+	param, exist = getParamFromQuery(r.URL.Query(), s)
 	if !exist {
 		return
 	}
